@@ -1,0 +1,6 @@
+{
+  "name": "MindMate – Personal Gemini Journal",
+  "description": "Production-ready personal AI journal with Firebase Auth, Cloud Firestore isolation, and server-side multi-turn Gemini reflections and mood analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

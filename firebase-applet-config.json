@@ -1,0 +1,12 @@
+{
+  "projectId": "paygentic-fraud-detector",
+  "appId": "1:265957711242:web:b8c04e26fd1c0baf80fc73",
+  "apiKey": "AIzaSyAlObJWYxLaq4lOl7lpnOPjcWv-w2aJiRI",
+  "authDomain": "paygentic-fraud-detector.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-b51177d5-df02-49b9-8c2d-6c155f7601e4",
+  "storageBucket": "paygentic-fraud-detector.firebasestorage.app",
+  "messagingSenderId": "265957711242",
+  "measurementId": "",
+  "oAuthClientId": "265957711242-ftumch91svgr0k02inujp1vejocqp0jo.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
+}
