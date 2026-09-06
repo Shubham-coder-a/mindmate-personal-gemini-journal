@@ -44,4 +44,17 @@ export async function verifyFirestoreConnection(): Promise<boolean> {
 // Fire connection verification quietly
 verifyFirestoreConnection().catch(() => {});
 
+// Helper to provide authenticated Authorization headers for server API calls
+export async function getAuthHeader(): Promise<Record<string, string>> {
+  const currentUser = auth.currentUser;
+  if (!currentUser) {
+    throw new Error('Authentication required: Please sign in with Google to continue.');
+  }
+  const token = await currentUser.getIdToken();
+  return {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+}
+
 export { app, firebaseConfig };

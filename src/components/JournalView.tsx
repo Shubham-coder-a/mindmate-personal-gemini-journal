@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { JournalEntry } from '../types';
+import { getAuthHeader } from '../lib/firebase';
 import {
   BookOpen,
   Plus,
@@ -116,9 +117,10 @@ export const JournalView: React.FC<JournalViewProps> = ({
   const handleFetchSparks = async () => {
     try {
       setIsSparksLoading(true);
+      const headers = await getAuthHeader();
       const res = await fetch('/api/gemini/prompt-spark', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ recentMood: mood }),
       });
       const data = await res.json();

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from 'firebase/auth';
 import { Conversation, ChatMessage, JournalEntry } from '../types';
+import { getAuthHeader } from '../lib/firebase';
 import {
   MessageSquareHeart,
   Send,
@@ -115,9 +116,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
         ? (pinnedEntry ? [pinnedEntry, ...entries.filter(e => e.id !== pinnedEntry.id)] : entries).slice(0, 5)
         : [];
 
+      const headers = await getAuthHeader();
       const res = await fetch('/api/gemini/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           messages: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
           contextEntries,

@@ -1,16 +1,85 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
+import { initializeApp as initAdminApp, getApps as getAdminApps } from 'firebase-admin/app';
+import { getAuth as getAdminAuth, DecodedIdToken } from 'firebase-admin/auth';
 
 dotenv.config();
 
-// Initialize Google Gen AI client server-side only
+// ============================================================
+// Firebase Admin SDK Initialization (Application Default Credentials)
+// ============================================================
+if (!getAdminApps().length) {
+  let defaultProjectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+  if (!defaultProjectId) {
+    try {
+      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(configPath)) {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        defaultProjectId = cfg.projectId;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  initAdminApp({
+    projectId: defaultProjectId || 'paygentic-fraud-detector',
+  });
+}
+
+// Request type with verified Firebase credentials
+export interface AuthenticatedRequest extends express.Request {
+  firebaseUser?: DecodedIdToken;
+  uid?: string;
+}
+
+// ============================================================
+// Server-Side Firebase Authentication Verification Middleware
+// ============================================================
+const verifyFirebaseToken: express.RequestHandler = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({
+      error: 'Unauthorized: Missing or invalid Authorization header. A valid Firebase ID token is required.',
+    });
+    return;
+  }
+
+  const token = authHeader.split('Bearer ')[1]?.trim();
+  if (!token) {
+    res.status(401).json({
+      error: 'Unauthorized: Bearer token is empty.',
+    });
+    return;
+  }
+
+  try {
+    const adminAuth = getAdminAuth();
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    (req as AuthenticatedRequest).firebaseUser = decodedToken;
+    (req as AuthenticatedRequest).uid = decodedToken.uid;
+    next();
+  } catch (err: any) {
+    console.error('Server-side Firebase ID token verification failed:', err.message);
+    res.status(401).json({
+      error: 'Unauthorized: Invalid or expired Firebase ID token.',
+      code: err.code || 'auth/invalid-token',
+    });
+    return;
+  }
+};
+
+// ============================================================
+// Google GenAI Client (Server-Side Only)
+// ============================================================
 const getGeminiClient = () => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn('GEMINI_API_KEY is not set. Gemini API endpoints will return descriptive error messages.');
+    console.warn('GEMINI_API_KEY is not set. Protected endpoints will return descriptive error messages.');
   }
   return new GoogleGenAI({
     apiKey: apiKey || '',
@@ -33,23 +102,29 @@ async function startServer() {
   // API Routes (must precede Vite middleware)
   // ============================================================
 
-  // Health check for Cloud Run and monitoring
+  // Health check for Cloud Run and ingress probes (no secrets exposed)
   app.get('/api/health', (req, res) => {
     res.json({
       status: 'ok',
       service: 'MindMate – Personal Gemini Journal',
       timestamp: new Date().toISOString(),
-      geminiConfigured: !!process.env.GEMINI_API_KEY,
     });
   });
 
-  // Multi-turn Gemini chat endpoint
-  app.post('/api/gemini/chat', async (req, res) => {
+  // Multi-turn Gemini chat endpoint (Protected by Firebase ID token verification)
+  app.post('/api/gemini/chat', verifyFirebaseToken, async (req: express.Request, res: express.Response) => {
     try {
+      const authReq = req as AuthenticatedRequest;
+      const authenticatedUid = authReq.uid;
+
+      if (!authenticatedUid) {
+        return res.status(401).json({ error: 'Unauthorized: Unable to resolve authenticated user UID.' });
+      }
+
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         return res.status(503).json({
-          error: 'Gemini API key is not configured. Please ensure GEMINI_API_KEY is provided in the Secrets panel or environment.',
+          error: 'Gemini API key is not configured on the server. Please ensure GEMINI_API_KEY is set via Secret Manager or environment.',
         });
       }
 
@@ -60,9 +135,9 @@ async function startServer() {
 
       const ai = getGeminiClient();
 
-      // Assemble system instruction with journal context
+      // Assemble system instruction with verified context
       let systemInstruction = `You are MindMate, a compassionate, emotionally intelligent, and deeply attentive personal journal companion.
-Your purpose: Help the user explore their reflections, gain self-awareness, untangle complex emotions, and cultivate mindfulness.
+Your purpose: Help the authenticated user explore their reflections, gain self-awareness, untangle complex emotions, and cultivate mindfulness.
 Guidelines:
 - Speak warmly, authentically, and gently.
 - Validate the user's emotional experience before offering new perspectives.
@@ -79,7 +154,6 @@ Guidelines:
       }
 
       // Format conversation history for @google/genai
-      // Converts messages: user -> 'user', model -> 'model'
       const contents = messages.map((m: any) => ({
         role: m.role === 'model' ? 'model' : 'user',
         parts: [{ text: m.content || '' }],
@@ -105,13 +179,20 @@ Guidelines:
     }
   });
 
-  // Mood & Reflection Summary endpoint
-  app.post('/api/gemini/reflect', async (req, res) => {
+  // Mood & Reflection Summary endpoint (Protected by Firebase ID token verification)
+  app.post('/api/gemini/reflect', verifyFirebaseToken, async (req: express.Request, res: express.Response) => {
     try {
+      const authReq = req as AuthenticatedRequest;
+      const authenticatedUid = authReq.uid;
+
+      if (!authenticatedUid) {
+        return res.status(401).json({ error: 'Unauthorized: Unable to resolve authenticated user UID.' });
+      }
+
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         return res.status(503).json({
-          error: 'Gemini API key is not configured. Please ensure GEMINI_API_KEY is provided in the Secrets panel or environment.',
+          error: 'Gemini API key is not configured on the server. Please ensure GEMINI_API_KEY is set via Secret Manager or environment.',
         });
       }
 
@@ -131,7 +212,7 @@ Guidelines:
         )
         .join('\n\n');
 
-      const prompt = `Analyze the following private journal entries written by the user and synthesize a thoughtful "Mood & Reflection Summary".
+      const prompt = `Analyze the following private journal entries written by the authenticated user and synthesize a thoughtful "Mood & Reflection Summary".
 
 Journal Entries:
 ${journalText}
@@ -181,9 +262,16 @@ Ensure the output is strictly valid JSON without markdown wrapping.`;
     }
   });
 
-  // Prompt spark generation
-  app.post('/api/gemini/prompt-spark', async (req, res) => {
+  // Prompt spark generation (Protected by Firebase ID token verification)
+  app.post('/api/gemini/prompt-spark', verifyFirebaseToken, async (req: express.Request, res: express.Response) => {
     try {
+      const authReq = req as AuthenticatedRequest;
+      const authenticatedUid = authReq.uid;
+
+      if (!authenticatedUid) {
+        return res.status(401).json({ error: 'Unauthorized: Unable to resolve authenticated user UID.' });
+      }
+
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
         return res.json({

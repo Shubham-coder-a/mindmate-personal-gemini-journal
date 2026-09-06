@@ -24,6 +24,7 @@ import {
   saveReflectionSummary,
   deleteReflectionSummary,
 } from './services/firestore';
+import { getAuthHeader } from './lib/firebase';
 import { Feather, CheckCircle2, AlertCircle } from 'lucide-react';
 
 const MainApp: React.FC = () => {
@@ -150,10 +151,11 @@ const MainApp: React.FC = () => {
     try {
       setIsReflecting(true);
       const recentToAnalyze = entries.slice(0, 10);
+      const headers = await getAuthHeader();
 
       const res = await fetch('/api/gemini/reflect', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           entries: recentToAnalyze.map((e) => ({
             title: e.title,
